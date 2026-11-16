@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  go:
+    name: Go Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.23
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: api/go.sum
+
+      - name: Verify dependencies
+        run: |
+          cd api
+          go mod verify
+
+      - name: Run Go vet (lint)
+        run: |
+          cd api
+          go vet ./...
+
+      - name: Run Go unit tests
+        run: |
+          cd api
+          go test -v -race ./...
+
+  python:
+    name: Python Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "engine/pyproject.toml"
+
+      - name: Install dependencies
+        run: |
+          cd engine
+          uv venv
+          uv pip install -e ".[dev]"
+
+      - name: Run Ruff linter
+        run: |
+          cd engine
+          uv run ruff check .
+
+      - name: Run Mypy type checker
+        run: |
+          cd engine
+          uv run mypy .
+
+      - name: Run Pytest with coverage
+        run: |
+          cd engine
+          uv run pytest --cov=engine tests/
+
+  node:
+    name: Angular Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install npm dependencies
+        run: |
+          cd web
+          npm ci
+
+      - name: Lint Angular workspace
+        run: |
+          cd web
+          npm run lint
+
+      - name: Build Angular application
+        run: |
+          cd web
+          npm run build
+
+      - name: Run Angular unit tests (Headless Chrome)
+        run: |
+          cd web
+          npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox

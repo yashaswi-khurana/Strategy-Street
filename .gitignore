@@ -1,0 +1,25 @@
+.env
+.env.local
+*.log
+.DS_Store
+
+# Go
+api/api
+api/bin/
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/.pytest_cache/
+**/.coverage
+**/.mypy_cache/
+**/.ruff_cache/
+**/dist/
+**/*.egg-info/
+
+# Node
+**/node_modules/
+**/dist/
+**/.angular/cache/
+web/coverage/
