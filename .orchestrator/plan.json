@@ -1,0 +1,79 @@
+{
+  "objective": "SS-002: Establish the reference-data spine with PostgreSQL 16 migrations, idempotent seed data (12 sectors, 52 NSE stocks, holidays, sessions), and Go pgx metadata store.",
+  "requirements": [
+    {"id": "R1", "text": "Versioned SQL migrations up/down for sectors, stocks, exchange_holidays, market_sessions", "acceptance": "make migrate-up creates all 4 tables with correct indexes; make migrate-down cleanly removes them without dropping preloaded timescaledb"},
+    {"id": "R2", "text": "Deterministic & idempotent seed data", "acceptance": "make seed executed twice yields identical row counts (INSERT ON CONFLICT DO NOTHING); 12 sectors, ~50 NSE stocks, 2 years NSE holidays, 2 muhurat sessions; 0 stocks with null sector_id"},
+    {"id": "R3", "text": "Go MetadataStore repository with typed structs and pgx", "acceptance": "internal/store/metadata implements GetStockBySymbol, ListStocksBySector, IsTradingDay, SessionFor with typed ErrNotFound"},
+    {"id": "R4", "text": "Asia/Kolkata timezone conversion semantics", "acceptance": "All application date logic explicitly evaluates in Asia/Kolkata (e.g. UTC 20:00 rolls over to next IST day); timestamps TIMESTAMPTZ"},
+    {"id": "R5", "text": "ADR 0002 documenting Symbol vs. Instrument Key", "acceptance": "docs/adr/0002-symbol-vs-instrument-key.md accepted with synthetic relational ID, UI symbol, and Upstox instrument_key separation"}
+  ],
+  "packages": [
+    {
+      "id": "WP0",
+      "kind": "contract",
+      "title": "Metadata Schema Contract & ADR",
+      "owner": "orchestrator",
+      "skill": "project-manager",
+      "depends_on": [],
+      "write_scope": [".orchestrator/contracts/**", "docs/adr/**"],
+      "covers": ["R5"],
+      "acceptance": "Contract frozen at v1 and ADR 0002 accepted"
+    },
+    {
+      "id": "WP1",
+      "kind": "build",
+      "title": "PostgreSQL Migrations Up & Down",
+      "owner": "db-engineer",
+      "skill": "pessimistic-minimalist-backend",
+      "depends_on": ["WP0"],
+      "write_scope": ["db/migrations/**"],
+      "covers": ["R1"],
+      "acceptance": "0001_metadata.up.sql and 0001_metadata.down.sql run cleanly in cycle"
+    },
+    {
+      "id": "WP2",
+      "kind": "build",
+      "title": "Deterministic Idempotent Seeds",
+      "owner": "data-engineer",
+      "skill": "pessimistic-minimalist-backend",
+      "depends_on": ["WP1"],
+      "write_scope": ["db/seeds/**"],
+      "covers": ["R2"],
+      "acceptance": "Seeds for 12 sectors, 52 stocks, holidays, sessions pass twice idempotently with 0 null sectors"
+    },
+    {
+      "id": "WP3",
+      "kind": "build",
+      "title": "Go Metadata Repository Store",
+      "owner": "backend-engineer",
+      "skill": "lazy-senior-engineer",
+      "depends_on": ["WP0"],
+      "write_scope": ["api/internal/store/metadata/**"],
+      "covers": ["R3", "R4"],
+      "acceptance": "Go repository compiles with pgx and passes IST date conversion logic"
+    },
+    {
+      "id": "WP4",
+      "kind": "build",
+      "title": "Makefile Targets & CI Integration",
+      "owner": "devops-engineer",
+      "skill": "lazy-senior-engineer",
+      "depends_on": ["WP1", "WP2"],
+      "write_scope": ["Makefile"],
+      "covers": ["R1", "R2"],
+      "acceptance": "make migrate-up, migrate-down, migrate-status, and seed execute cleanly"
+    },
+    {
+      "id": "WP5",
+      "kind": "integration",
+      "title": "Testcontainers Integration & Monorepo Verification",
+      "owner": "orchestrator",
+      "skill": "verify-and-stop",
+      "depends_on": ["WP3", "WP4"],
+      "write_scope": [".orchestrator/master-board.md"],
+      "covers": ["R1", "R2", "R3", "R4", "R5"],
+      "acceptance": "make test and make lint pass; testcontainers verifies symbol lookup, holiday detection, down/up cycle"
+    }
+  ]
+}
+
