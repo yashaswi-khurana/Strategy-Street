@@ -1,4 +1,4 @@
-.PHONY: all up down migrate migrate-up migrate-down migrate-status seed api engine web test test-go test-engine test-web lint lint-go lint-engine lint-web help
+.PHONY: all up down migrate migrate-up migrate-down migrate-status seed seed-candles tf-verify api engine web test test-go test-engine test-web lint lint-go lint-engine lint-web help
 
 -include .env
 export
@@ -60,6 +60,14 @@ seed:
 			docker compose -f $(COMPOSE_FILE) $(ENV_FILE_FLAG) exec -T timescaledb psql -U "$${POSTGRES_USER:-postgres}" -d "$${POSTGRES_DB:-strategystreet}" -v ON_ERROR_STOP=1 < "$$f" || exit 1; \
 		done; \
 	fi
+
+seed-candles:
+	@echo "==> Seeding synthetic 1m candle data and refreshing continuous aggregates..."
+	cd api && go run ./cmd/seed-candles
+
+tf-verify:
+	@echo "==> Verifying continuous aggregates against from-scratch time_bucket computation..."
+	cd api && go run ./cmd/tf-verify
 
 api:
 	cd api && go run ./cmd/api

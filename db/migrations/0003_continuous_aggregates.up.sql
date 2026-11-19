@@ -1,0 +1,224 @@
+-- SS-004: Continuous Aggregates for 5m -> 1Y + Gap Detection View
+
+-- Intraday Continuous Aggregates (source: candles_1m)
+-- Origin: TIMESTAMPTZ '2015-01-01 09:15:00+05:30' ensures 1h bars land on 09:15, 10:15... IST
+-- and 1d bars capture the exact 375 minutes of the NSE trading session (09:15 - 15:30 IST).
+
+-- 1. candles_5m
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_5m
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '5 minutes', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1m
+GROUP BY stock_id, time_bucket(INTERVAL '5 minutes', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_5m_stock_bucket_desc_idx ON candles_5m (stock_id, bucket_time DESC);
+
+-- 2. candles_10m
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_10m
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '10 minutes', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1m
+GROUP BY stock_id, time_bucket(INTERVAL '10 minutes', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_10m_stock_bucket_desc_idx ON candles_10m (stock_id, bucket_time DESC);
+
+-- 3. candles_15m
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_15m
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '15 minutes', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1m
+GROUP BY stock_id, time_bucket(INTERVAL '15 minutes', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_15m_stock_bucket_desc_idx ON candles_15m (stock_id, bucket_time DESC);
+
+-- 4. candles_30m
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_30m
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '30 minutes', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1m
+GROUP BY stock_id, time_bucket(INTERVAL '30 minutes', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_30m_stock_bucket_desc_idx ON candles_30m (stock_id, bucket_time DESC);
+
+-- 5. candles_1h
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_1h
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '1 hour', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1m
+GROUP BY stock_id, time_bucket(INTERVAL '1 hour', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_1h_stock_bucket_desc_idx ON candles_1h (stock_id, bucket_time DESC);
+
+-- 6. candles_3h
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_3h
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '3 hours', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1m
+GROUP BY stock_id, time_bucket(INTERVAL '3 hours', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_3h_stock_bucket_desc_idx ON candles_3h (stock_id, bucket_time DESC);
+
+-- 7. candles_1d (session-aligned daily bar from 1m)
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_1d
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '1 day', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1m
+GROUP BY stock_id, time_bucket(INTERVAL '1 day', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_1d_stock_bucket_desc_idx ON candles_1d (stock_id, bucket_time DESC);
+
+-- Macro Continuous Aggregates (source: candles_1d)
+-- Shares origin '2015-01-01 09:15:00+05:30' for hierarchical rollup compatibility.
+
+-- 8. candles_15d
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_15d
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '15 days', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1d
+GROUP BY stock_id, time_bucket(INTERVAL '15 days', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_15d_stock_bucket_desc_idx ON candles_15d (stock_id, bucket_time DESC);
+
+-- 9. candles_1mo
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_1mo
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '1 month', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1d
+GROUP BY stock_id, time_bucket(INTERVAL '1 month', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_1mo_stock_bucket_desc_idx ON candles_1mo (stock_id, bucket_time DESC);
+
+-- 10. candles_6mo
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_6mo
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '6 months', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1d
+GROUP BY stock_id, time_bucket(INTERVAL '6 months', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_6mo_stock_bucket_desc_idx ON candles_6mo (stock_id, bucket_time DESC);
+
+-- 11. candles_1y
+CREATE MATERIALIZED VIEW IF NOT EXISTS candles_1y
+WITH (timescaledb.continuous) AS
+SELECT stock_id,
+       time_bucket(INTERVAL '1 year', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30') AS bucket_time,
+       first(open, bucket_time)  AS open,
+       max(high)                 AS high,
+       min(low)                  AS low,
+       last(close, bucket_time)  AS close,
+       sum(volume)::BIGINT       AS volume,
+       last(oi, bucket_time)     AS oi,
+       bool_and(is_adjusted)     AS is_adjusted
+FROM candles_1d
+GROUP BY stock_id, time_bucket(INTERVAL '1 year', bucket_time, TIMESTAMPTZ '2015-01-01 09:15:00+05:30')
+WITH NO DATA;
+
+CREATE INDEX IF NOT EXISTS candles_1y_stock_bucket_desc_idx ON candles_1y (stock_id, bucket_time DESC);
+
+-- Data Quality Guard: v_candle_gaps
+-- Identifies intra-session gaps (> 1 minute between consecutive bars on trading days)
+CREATE OR REPLACE VIEW v_candle_gaps AS
+SELECT stock_id,
+       '1m'::TEXT AS tf,
+       bucket_time + INTERVAL '1 minute' AS missing_bucket
+FROM (
+  SELECT stock_id,
+         bucket_time,
+         LEAD(bucket_time) OVER (PARTITION BY stock_id ORDER BY bucket_time) AS next_bucket
+  FROM candles_1m
+) t
+WHERE next_bucket IS NOT NULL
+  AND next_bucket > bucket_time + INTERVAL '1 minute'
+  AND (bucket_time AT TIME ZONE 'Asia/Kolkata')::DATE = (next_bucket AT TIME ZONE 'Asia/Kolkata')::DATE
+  AND (next_bucket AT TIME ZONE 'Asia/Kolkata')::TIME <= '15:30:00'::TIME;
+

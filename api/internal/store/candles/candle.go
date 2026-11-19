@@ -13,11 +13,21 @@ import (
 // IST has had a fixed offset of +05:30 without Daylight Saving Time since September 1947.
 var LocationIST = time.FixedZone("IST", 5*3600+30*60)
 
-// EpochIST is the reference epoch for all bar-open bucket alignments: 1970-01-01T00:00:00+05:30.
+// EpochIST is the legacy reference epoch for bar-open bucket alignments: 1970-01-01T00:00:00+05:30.
 // In UTC, this instant is exactly 1969-12-31T18:30:00Z (Unix timestamp -19800 seconds).
-// All candle bucket_time values are bar-open timestamps in UTC, aligned to exact multiples
-// of the timeframe starting from this epoch.
 var EpochIST = time.Date(1970, time.January, 1, 0, 0, 0, 0, LocationIST).UTC()
+
+// Origin2015IST is the unified reference epoch for all candle bucket alignments: 2015-01-01T09:15:00+05:30.
+// In UTC, this instant is exactly 2015-01-01T03:45:00Z.
+// This epoch anchors intraday bars to NSE market opening (09:15 IST) and aligns daily bars
+// cleanly to the 09:15-15:30 IST session while ensuring continuous aggregates across all timeframes
+// share the identical origin required by TimescaleDB hierarchical continuous aggregates.
+var Origin2015IST = time.Date(2015, time.January, 1, 9, 15, 0, 0, LocationIST).UTC()
+
+// OriginIntradayIST is an alias to Origin2015IST for intraday timeframes.
+// Note: 1970-01-01 09:15:00 IST and 2015-01-01 09:15:00 IST are separated by exactly 16,436 days,
+// which is an exact multiple of 1s, 1m, 5m, 10m, 15m, 30m, 1h, 3h, and 1d.
+var OriginIntradayIST = Origin2015IST
 
 var (
 	// ErrMisalignedBar is returned when a candle's bucket_time is not aligned to the timeframe interval.
@@ -151,9 +161,9 @@ func (tf Timeframe) Duration() time.Duration {
 }
 
 // Align calculates the bar-open timestamp in UTC, aligned to the timeframe boundary
-// anchored at the IST-aligned epoch (1970-01-01T00:00:00+05:30).
+// anchored at the unified IST-aligned epoch Origin2015IST (2015-01-01T09:15:00+05:30).
 //
-// For fixed intervals (1s to 15d), alignment is computed via modular offset from EpochIST.
+// For fixed intervals (1s to 15d), alignment is computed via modular offset from Origin2015IST.
 // For calendar months and years (1mo, 6mo, 1y), alignment is locked to the 1st of the
 // respective month/half/year in Asia/Kolkata, then returned in UTC.
 func (tf Timeframe) Align(t time.Time) time.Time {
@@ -168,12 +178,23 @@ func (tf Timeframe) Align(t time.Time) time.Time {
 	case Timeframe1y:
 		tIST := t.In(LocationIST)
 		return time.Date(tIST.Year(), time.January, 1, 0, 0, 0, 0, LocationIST).UTC()
+	case Timeframe1s, Timeframe1m:
+		dur := tf.Duration()
+		if dur <= 0 {
+			return t.UTC()
+		}
+		diff := t.Sub(Origin2015IST)
+		rem := diff % dur
+		if rem < 0 {
+			rem += dur
+		}
+		return t.Add(-rem).UTC()
 	default:
 		dur := tf.Duration()
 		if dur <= 0 {
 			return t.UTC()
 		}
-		diff := t.Sub(EpochIST)
+		diff := t.Sub(Origin2015IST)
 		rem := diff % dur
 		if rem < 0 {
 			rem += dur
@@ -198,19 +219,53 @@ func (tf Timeframe) ValidateBucketTime(t time.Time) error {
 	return nil
 }
 
-// TableName returns the physical table name for this timeframe.
-// In SS-003, only raw resolutions (candles_1s and candles_1m) exist as physical hypertables.
+// TableName returns the physical table or continuous aggregate materialized view name for this timeframe.
 func (tf Timeframe) TableName() (string, error) {
 	switch tf {
 	case Timeframe1s:
 		return "candles_1s", nil
 	case Timeframe1m:
 		return "candles_1m", nil
-	case Timeframe5m, Timeframe10m, Timeframe15m, Timeframe30m, Timeframe1h, Timeframe3h,
-		Timeframe1d, Timeframe15d, Timeframe1mo, Timeframe6mo, Timeframe1y:
-		return "", fmt.Errorf("%w: timeframe %s is not a physical table in SS-003", ErrUnsupportedTimeframe, tf)
+	case Timeframe5m:
+		return "candles_5m", nil
+	case Timeframe10m:
+		return "candles_10m", nil
+	case Timeframe15m:
+		return "candles_15m", nil
+	case Timeframe30m:
+		return "candles_30m", nil
+	case Timeframe1h:
+		return "candles_1h", nil
+	case Timeframe3h:
+		return "candles_3h", nil
+	case Timeframe1d:
+		return "candles_1d", nil
+	case Timeframe15d:
+		return "candles_15d", nil
+	case Timeframe1mo:
+		return "candles_1mo", nil
+	case Timeframe6mo:
+		return "candles_6mo", nil
+	case Timeframe1y:
+		return "candles_1y", nil
 	default:
 		return "", fmt.Errorf("%w: unknown timeframe %s", ErrUnsupportedTimeframe, tf)
+	}
+}
+
+// RelationName is an alias for TableName, providing semantic clarity when referencing relations.
+func (tf Timeframe) RelationName() (string, error) {
+	return tf.TableName()
+}
+
+// IsContinuousAggregate returns true if the timeframe is derived via TimescaleDB continuous aggregates.
+func (tf Timeframe) IsContinuousAggregate() bool {
+	switch tf {
+	case Timeframe5m, Timeframe10m, Timeframe15m, Timeframe30m, Timeframe1h, Timeframe3h,
+		Timeframe1d, Timeframe15d, Timeframe1mo, Timeframe6mo, Timeframe1y:
+		return true
+	default:
+		return false
 	}
 }
 

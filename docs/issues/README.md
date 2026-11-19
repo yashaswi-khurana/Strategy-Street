@@ -10,6 +10,7 @@ This directory tracks platform issues and milestones.
 
 - **Milestone 1: Data Layer & Market Streaming**
   - [SS-003: TimescaleDB Hypertables, Continuous Aggregates & Multi-Timeframe Candle Storage](SS-003-candle-hypertables.md)
+  - [SS-004: Continuous Aggregates for 5m → 1Y + Retention/Compression](SS-004-continuous-aggregates.md)
 
 ## Repository Layout
 

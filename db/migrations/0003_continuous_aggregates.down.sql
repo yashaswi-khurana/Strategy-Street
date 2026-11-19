@@ -1,0 +1,19 @@
+-- SS-004: Drop continuous aggregates and gap monitoring view
+
+DROP VIEW IF EXISTS v_candle_gaps CASCADE;
+
+-- Drop hierarchical continuous aggregates first (depend on candles_1d)
+DROP MATERIALIZED VIEW IF EXISTS candles_1y CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS candles_6mo CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS candles_1mo CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS candles_15d CASCADE;
+
+-- Drop intraday and daily continuous aggregates (depend on candles_1m)
+DROP MATERIALIZED VIEW IF EXISTS candles_1d CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS candles_3h CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS candles_1h CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS candles_30m CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS candles_15m CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS candles_10m CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS candles_5m CASCADE;
+

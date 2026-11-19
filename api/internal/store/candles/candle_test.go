@@ -128,16 +128,47 @@ func TestTimeframe_AlignAndValidation(t *testing.T) {
 	})
 
 	t.Run("1d alignment in IST", func(t *testing.T) {
-		// Daily candle starts at 00:00:00 IST
-		tDay := time.Date(2026, time.November, 18, 0, 0, 0, 0, candles.LocationIST).UTC()
+		// Daily candle starts at 09:15:00 IST (anchored to NSE session open)
+		tDay := time.Date(2026, time.November, 18, 9, 15, 0, 0, candles.LocationIST).UTC()
 		if err := candles.Timeframe1d.ValidateBucketTime(tDay); err != nil {
-			t.Fatalf("expected 00:00:00 IST to be valid 1d bar, got %v", err)
+			t.Fatalf("expected 09:15:00 IST to be valid 1d bar, got %v", err)
 		}
 
-		// Intraday time on 1d should fail
-		tIntra := time.Date(2026, time.November, 18, 9, 15, 0, 0, candles.LocationIST).UTC()
+		// Midnight on 1d should fail because 1d is anchored to 09:15:00 IST
+		tMidnight := time.Date(2026, time.November, 18, 0, 0, 0, 0, candles.LocationIST).UTC()
+		if err := candles.Timeframe1d.ValidateBucketTime(tMidnight); err == nil {
+			t.Fatal("expected 00:00 on 1d to fail validation")
+		}
+
+		// Intraday mid-session time on 1d should fail
+		tIntra := time.Date(2026, time.November, 18, 14, 30, 0, 0, candles.LocationIST).UTC()
 		if err := candles.Timeframe1d.ValidateBucketTime(tIntra); err == nil {
-			t.Fatal("expected 09:15 on 1d to fail validation")
+			t.Fatal("expected 14:30 on 1d to fail validation")
+		}
+	})
+
+	t.Run("1h alignment lands on 09:15, 10:15, etc. in IST", func(t *testing.T) {
+		t915 := time.Date(2026, time.November, 18, 9, 15, 0, 0, candles.LocationIST).UTC()
+		if err := candles.Timeframe1h.ValidateBucketTime(t915); err != nil {
+			t.Fatalf("expected 09:15:00 IST to be valid 1h bar, got %v", err)
+		}
+
+		t1015 := time.Date(2026, time.November, 18, 10, 15, 0, 0, candles.LocationIST).UTC()
+		if err := candles.Timeframe1h.ValidateBucketTime(t1015); err != nil {
+			t.Fatalf("expected 10:15:00 IST to be valid 1h bar, got %v", err)
+		}
+
+		// Top of the clock (09:00, 10:00) is NOT aligned
+		t1000 := time.Date(2026, time.November, 18, 10, 0, 0, 0, candles.LocationIST).UTC()
+		if err := candles.Timeframe1h.ValidateBucketTime(t1000); err == nil {
+			t.Fatal("expected 10:00 on 1h to fail validation (must land on :15)")
+		}
+	})
+
+	t.Run("15d alignment from 2015-01-01 09:15 IST", func(t *testing.T) {
+		t15d := time.Date(2015, time.January, 1, 9, 15, 0, 0, candles.LocationIST).UTC()
+		if err := candles.Timeframe15d.ValidateBucketTime(t15d); err != nil {
+			t.Fatalf("expected 2015-01-01 09:15:00 IST to be valid 15d bar, got %v", err)
 		}
 	})
 
@@ -149,6 +180,58 @@ func TestTimeframe_AlignAndValidation(t *testing.T) {
 			t.Fatalf("expected 1mo aligned %s, got %s", expected.Format(time.RFC3339), aligned.Format(time.RFC3339))
 		}
 	})
+}
+
+func TestTimeframe_RelationResolver(t *testing.T) {
+	expectedRelations := map[candles.Timeframe]struct {
+		relation string
+		isCagg   bool
+		writable bool
+	}{
+		candles.Timeframe1s:  {"candles_1s", false, true},
+		candles.Timeframe1m:  {"candles_1m", false, true},
+		candles.Timeframe5m:  {"candles_5m", true, false},
+		candles.Timeframe10m: {"candles_10m", true, false},
+		candles.Timeframe15m: {"candles_15m", true, false},
+		candles.Timeframe30m: {"candles_30m", true, false},
+		candles.Timeframe1h:  {"candles_1h", true, false},
+		candles.Timeframe3h:  {"candles_3h", true, false},
+		candles.Timeframe1d:  {"candles_1d", true, false},
+		candles.Timeframe15d: {"candles_15d", true, false},
+		candles.Timeframe1mo: {"candles_1mo", true, false},
+		candles.Timeframe6mo: {"candles_6mo", true, false},
+		candles.Timeframe1y:  {"candles_1y", true, false},
+	}
+
+	if len(expectedRelations) != 13 {
+		t.Fatalf("expected 13 timeframes, got %d", len(expectedRelations))
+	}
+
+	for tf, expected := range expectedRelations {
+		tbl, err := tf.TableName()
+		if err != nil {
+			t.Errorf("expected TableName for %s to succeed, got %v", tf, err)
+		}
+		if tbl != expected.relation {
+			t.Errorf("expected TableName %s, got %s", expected.relation, tbl)
+		}
+
+		rel, err := tf.RelationName()
+		if err != nil {
+			t.Errorf("expected RelationName for %s to succeed, got %v", tf, err)
+		}
+		if rel != expected.relation {
+			t.Errorf("expected RelationName %s, got %s", expected.relation, rel)
+		}
+
+		if tf.IsContinuousAggregate() != expected.isCagg {
+			t.Errorf("expected IsContinuousAggregate=%v for %s, got %v", expected.isCagg, tf, tf.IsContinuousAggregate())
+		}
+
+		if tf.IsWritable() != expected.writable {
+			t.Errorf("expected IsWritable=%v for %s, got %v", expected.writable, tf, tf.IsWritable())
+		}
+	}
 }
 
 func TestTimeframe_Constraints(t *testing.T) {
