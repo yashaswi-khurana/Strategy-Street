@@ -1,160 +1,120 @@
 {
-  "objective": "SS-004: Implement continuous aggregates for 5m -> 1Y + retention and compression policies, Go relation resolver, seed generator, and tf-verify script.",
+  "objective": "SS-005: Market Session Filter & Missing-Bar Policy across Go (internal/marketcal) and Python (engine/marketcal.py) with half-open session semantics, deterministic bar-closing, read-time gap decoration, and is_filled column schema honest migration.",
   "requirements": [
     {
       "id": "R1",
-      "text": "Continuous Aggregates Migration 0003",
-      "acceptance": "0003_continuous_aggregates.up.sql creates 11 caggs with unified origin and v_candle_gaps view; down.sql rolls back cleanly"
+      "text": "Migration 0005 is_filled",
+      "acceptance": "0005_is_filled.up.sql adds is_filled BOOLEAN NOT NULL DEFAULT FALSE to candles_1s and candles_1m, recreates continuous aggregates passing bool_and(is_filled); down.sql cleanly rolls back"
     },
     {
       "id": "R2",
-      "text": "Policies Migration 0004",
-      "acceptance": "0004_policies.up.sql configures refresh, compression, and retention policies matching spec table; down.sql rolls back cleanly"
+      "text": "Go Market Calendar Package internal/marketcal",
+      "acceptance": "Session(), IsOpen([09:15, 15:30) IST), TradingDays(), NextBarClose(deterministic pure), and BarsPerSession() implemented and tested"
     },
     {
       "id": "R3",
-      "text": "Go Timeframe Resolver and Store Range",
-      "acceptance": "Timeframe enum resolves all 13 relations; unit test asserts resolution; Range works for all timeframes; writes forbidden on 5m+"
+      "text": "Missing-Bar Policy & Read-Time Decorator",
+      "acceptance": "FillPolicy (CarryForward, Skip) decorator FilledRange fills mid-session gaps with volume=0, is_filled=true, previous close; no phantom storage writes"
     },
     {
       "id": "R4",
-      "text": "ADR 0004 and Contracts",
-      "acceptance": "docs/adr/0004-bucket-origins.md and candle-aggregates.md contract frozen"
+      "text": "Python 1:1 Mirror engine/marketcal.py",
+      "acceptance": "Calendar, filled_range, next_bar_close implemented in Python with identical semantics"
     },
     {
       "id": "R5",
-      "text": "Synthetic 1m Data Seeder",
-      "acceptance": "make seed-candles generates ~3 months of 1m data during NSE trading hours across non-holiday weekdays"
-    },
-    {
-      "id": "R6",
-      "text": "tf-verify SQL verification script",
-      "acceptance": "make tf-verify asserts all 13 timeframes match from-scratch time_bucket computation, 1h lands on 09:15, and 1d volume equals 375 1m bars"
-    },
-    {
-      "id": "R7",
-      "text": "Continuous Aggregate Integration Suite",
-      "acceptance": "Test suite validates refresh visibility, 15:30 boundary handling, and jobs registration in timescaledb_information.jobs"
+      "text": "Shared Cross-Language Fixtures & ADR 0005",
+      "acceptance": "Go generates engine/testdata/sessions.json; pytest and Go test suite verify byte-identical results; docs/adr/0005-session-boundaries.md accepted"
     }
   ],
   "packages": [
     {
-      "id": "WP-CAGG-0",
+      "id": "WP-SESSION-0",
       "kind": "contract",
-      "title": "ADR 0004 Bucket Origins & Contract",
+      "title": "ADR 0005 Session Boundaries & Contract",
       "owner": "orchestrator",
       "skill": "project-manager",
       "depends_on": [],
       "write_scope": [
-        "docs/adr/0004-bucket-origins.md",
-        ".orchestrator/contracts/candle-aggregates.md"
-      ],
-      "covers": [
-        "R4"
-      ],
-      "acceptance": "Contract frozen and ADR 0004 accepted"
-    },
-    {
-      "id": "WP-CAGG-1",
-      "kind": "build",
-      "title": "Continuous Aggregates Migration",
-      "owner": "db-engineer",
-      "skill": "pessimistic-minimalist-backend",
-      "depends_on": [
-        "WP-CAGG-0"
-      ],
-      "write_scope": [
-        "db/migrations/0003_continuous_aggregates.*.sql"
-      ],
-      "covers": [
-        "R1"
-      ],
-      "acceptance": "0003_continuous_aggregates.up.sql creates all 11 caggs and v_candle_gaps with zero error, down.sql rolls back cleanly"
-    },
-    {
-      "id": "WP-CAGG-2",
-      "kind": "build",
-      "title": "Policies Migration",
-      "owner": "db-engineer",
-      "skill": "pessimistic-minimalist-backend",
-      "depends_on": [
-        "WP-CAGG-1"
-      ],
-      "write_scope": [
-        "db/migrations/0004_policies.*.sql"
-      ],
-      "covers": [
-        "R2"
-      ],
-      "acceptance": "0004_policies.up.sql configures refresh, compression, and retention; down.sql cleanly removes policies"
-    },
-    {
-      "id": "WP-CAGG-3",
-      "kind": "build",
-      "title": "Go Timeframe Resolver and Store Range",
-      "owner": "backend-engineer",
-      "skill": "lazy-senior-engineer",
-      "depends_on": [
-        "WP-CAGG-0"
-      ],
-      "write_scope": [
-        "api/internal/store/candles/**"
-      ],
-      "covers": [
-        "R3"
-      ],
-      "acceptance": "All 13 enum values resolve to table names; unit tests pass; Align() updated to 09:15 anchor"
-    },
-    {
-      "id": "WP-CAGG-4",
-      "kind": "build",
-      "title": "Synthetic 1m Candle Seeder",
-      "owner": "backend-engineer",
-      "skill": "lazy-senior-engineer",
-      "depends_on": [
-        "WP-CAGG-1",
-        "WP-CAGG-3"
-      ],
-      "write_scope": [
-        "api/cmd/seed-candles/**",
-        "Makefile"
+        "docs/adr/0005-session-boundaries.md",
+        "docs/issues/SS-005-session-and-missing-bars.md",
+        ".orchestrator/contracts/session-filter.md"
       ],
       "covers": [
         "R5"
       ],
-      "acceptance": "make seed-candles seeds 3 months of 1m data for sample stocks"
+      "acceptance": "Contract frozen and ADR 0005 accepted"
     },
     {
-      "id": "WP-CAGG-5",
+      "id": "WP-SESSION-1",
       "kind": "build",
-      "title": "tf-verify Script and Target",
-      "owner": "qa-tester",
-      "skill": "lazy-senior-engineer",
+      "title": "Migration 0005 is_filled Column & Continuous Aggregates",
+      "owner": "db-engineer",
+      "skill": "pessimistic-minimalist-backend",
       "depends_on": [
-        "WP-CAGG-2",
-        "WP-CAGG-4"
+        "WP-SESSION-0"
       ],
       "write_scope": [
-        "api/cmd/tf-verify/**",
-        "Makefile"
+        "db/migrations/0005_is_filled.*.sql",
+        "api/internal/store/candles/**"
       ],
       "covers": [
-        "R6"
+        "R1"
       ],
-      "acceptance": "make tf-verify verifies all 13 timeframes against direct time_bucket calculation"
+      "acceptance": "0005_is_filled.up.sql creates column and cagg rollups; candles store updated"
     },
     {
-      "id": "WP-CAGG-6",
+      "id": "WP-SESSION-2",
+      "kind": "build",
+      "title": "Go internal/marketcal Calendar & FillPolicy Decorator",
+      "owner": "backend-engineer",
+      "skill": "lazy-senior-engineer",
+      "depends_on": [
+        "WP-SESSION-0",
+        "WP-SESSION-1"
+      ],
+      "write_scope": [
+        "api/internal/marketcal/**",
+        "engine/testdata/sessions.json"
+      ],
+      "covers": [
+        "R2",
+        "R3"
+      ],
+      "acceptance": "internal/marketcal boundary tests, AC1-AC4 pass, sessions.json fixture generated"
+    },
+    {
+      "id": "WP-SESSION-3",
+      "kind": "build",
+      "title": "Python engine/marketcal.py 1:1 Mirror & Fixture Tests",
+      "owner": "backend-engineer",
+      "skill": "lazy-senior-engineer",
+      "depends_on": [
+        "WP-SESSION-2"
+      ],
+      "write_scope": [
+        "engine/engine/marketcal.py",
+        "engine/marketcal.py",
+        "engine/tests/test_marketcal.py"
+      ],
+      "covers": [
+        "R4",
+        "R5"
+      ],
+      "acceptance": "pytest verifies 100% equivalence on shared fixtures and acceptance criteria"
+    },
+    {
+      "id": "WP-SESSION-4",
       "kind": "integration",
-      "title": "Integration Test Suite & Quality Gate",
+      "title": "Full System Integration & Verification",
       "owner": "orchestrator",
       "skill": "verify-and-stop",
       "depends_on": [
-        "WP-CAGG-3",
-        "WP-CAGG-5"
+        "WP-SESSION-1",
+        "WP-SESSION-2",
+        "WP-SESSION-3"
       ],
       "write_scope": [
-        "api/internal/store/candles/cagg_test.go",
         ".orchestrator/master-board.md"
       ],
       "covers": [
@@ -162,11 +122,9 @@
         "R2",
         "R3",
         "R4",
-        "R5",
-        "R6",
-        "R7"
+        "R5"
       ],
-      "acceptance": "All unit and integration tests pass, make tf-verify exits 0, jobs registered in timescaledb_information.jobs"
+      "acceptance": "All Go and Python tests pass, linters pass, zero regressions"
     }
   ]
 }

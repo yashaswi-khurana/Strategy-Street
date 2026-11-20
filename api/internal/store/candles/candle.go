@@ -333,6 +333,9 @@ func (tf Timeframe) ValidateBar(c Candle) error {
 	if c.IsAdjusted {
 		return fmt.Errorf("%w: is_adjusted must be false (SS-003 stores unadjusted raw market data only)", ErrInvalidBar)
 	}
+	if c.IsFilled {
+		return fmt.Errorf("%w: is_filled must be false (filled candles must never be persisted to storage)", ErrInvalidBar)
+	}
 	return nil
 }
 
@@ -349,4 +352,5 @@ type Candle struct {
 	Volume     int64          `json:"volume"`
 	OI         int64          `json:"oi"`
 	IsAdjusted bool           `json:"is_adjusted"`
+	IsFilled   bool           `json:"is_filled"`
 }

@@ -92,15 +92,15 @@ func getUpsertQuery(tableName string, count int) string {
 	qb.Grow(count*60 + 256)
 	qb.WriteString("INSERT INTO ")
 	qb.WriteString(tableName)
-	qb.WriteString(" (stock_id, bucket_time, open, high, low, close, volume, oi, is_adjusted) VALUES ")
+	qb.WriteString(" (stock_id, bucket_time, open, high, low, close, volume, oi, is_adjusted, is_filled) VALUES ")
 
 	for i := 0; i < count; i++ {
 		if i > 0 {
 			qb.WriteByte(',')
 		}
-		base := i * 9
+		base := i * 10
 		qb.WriteByte('(')
-		for col := 1; col <= 9; col++ {
+		for col := 1; col <= 10; col++ {
 			if col > 1 {
 				qb.WriteByte(',')
 			}
@@ -118,7 +118,8 @@ func getUpsertQuery(tableName string, count int) string {
 			close = EXCLUDED.close,
 			volume = EXCLUDED.volume,
 			oi = EXCLUDED.oi,
-			is_adjusted = EXCLUDED.is_adjusted;
+			is_adjusted = EXCLUDED.is_adjusted,
+			is_filled = EXCLUDED.is_filled;
 	`)
 
 	q := qb.String()
@@ -179,9 +180,9 @@ type execer interface {
 
 func (s *Store) insertChunk(ctx context.Context, ex execer, tableName string, bars []Candle) error {
 	query := getUpsertQuery(tableName, len(bars))
-	args := make([]any, len(bars)*9)
+	args := make([]any, len(bars)*10)
 	for i, bar := range bars {
-		offset := i * 9
+		offset := i * 10
 		args[offset] = bar.StockID
 		args[offset+1] = bar.BucketTime.UTC()
 		args[offset+2] = bar.Open
@@ -191,6 +192,7 @@ func (s *Store) insertChunk(ctx context.Context, ex execer, tableName string, ba
 		args[offset+6] = bar.Volume
 		args[offset+7] = bar.OI
 		args[offset+8] = bar.IsAdjusted
+		args[offset+9] = bar.IsFilled
 	}
 
 	if _, err := ex.Exec(ctx, query, args...); err != nil {
@@ -215,7 +217,7 @@ func (s *Store) Range(ctx context.Context, stockID int, tf Timeframe, from, to t
 	}
 
 	query := fmt.Sprintf(`
-		SELECT stock_id, bucket_time, open, high, low, close, volume, oi, is_adjusted
+		SELECT stock_id, bucket_time, open, high, low, close, volume, oi, is_adjusted, is_filled
 		FROM %s
 		WHERE stock_id = $1 AND bucket_time >= $2 AND bucket_time <= $3
 		ORDER BY bucket_time ASC;
@@ -240,6 +242,7 @@ func (s *Store) Range(ctx context.Context, stockID int, tf Timeframe, from, to t
 			&c.Volume,
 			&c.OI,
 			&c.IsAdjusted,
+			&c.IsFilled,
 		); err != nil {
 			return nil, fmt.Errorf("failed scanning candle row: %w", err)
 		}
@@ -263,7 +266,7 @@ func (s *Store) Latest(ctx context.Context, stockID int, tf Timeframe) (Candle, 
 	}
 
 	query := fmt.Sprintf(`
-		SELECT stock_id, bucket_time, open, high, low, close, volume, oi, is_adjusted
+		SELECT stock_id, bucket_time, open, high, low, close, volume, oi, is_adjusted, is_filled
 		FROM %s
 		WHERE stock_id = $1
 		ORDER BY bucket_time DESC
@@ -281,6 +284,7 @@ func (s *Store) Latest(ctx context.Context, stockID int, tf Timeframe) (Candle, 
 		&c.Volume,
 		&c.OI,
 		&c.IsAdjusted,
+		&c.IsFilled,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -325,7 +329,7 @@ func (s *Store) LatestTime(ctx context.Context, stockID int, tf Timeframe) (time
 type candleCopySource struct {
 	bars []Candle
 	idx  int
-	row  [9]any
+	row  [10]any
 }
 
 func newCandleCopySource(bars []Candle) *candleCopySource {
@@ -348,6 +352,7 @@ func (s *candleCopySource) Values() ([]any, error) {
 	s.row[6] = b.Volume
 	s.row[7] = b.OI
 	s.row[8] = b.IsAdjusted
+	s.row[9] = b.IsFilled
 	return s.row[:], nil
 }
 
@@ -392,7 +397,7 @@ func (s *Store) CopyBatch(ctx context.Context, tf Timeframe, bars []Candle) erro
 	}
 
 	deduped := deduplicateBars(bars)
-	cols := []string{"stock_id", "bucket_time", "open", "high", "low", "close", "volume", "oi", "is_adjusted"}
+	cols := []string{"stock_id", "bucket_time", "open", "high", "low", "close", "volume", "oi", "is_adjusted", "is_filled"}
 
 	source := newCandleCopySource(deduped)
 
@@ -401,8 +406,8 @@ func (s *Store) CopyBatch(ctx context.Context, tf Timeframe, bars []Candle) erro
 	}
 
 	mergeSQL := fmt.Sprintf(`
-		INSERT INTO %s (stock_id, bucket_time, open, high, low, close, volume, oi, is_adjusted)
-		SELECT stock_id, bucket_time, open, high, low, close, volume, oi, is_adjusted
+		INSERT INTO %s (stock_id, bucket_time, open, high, low, close, volume, oi, is_adjusted, is_filled)
+		SELECT stock_id, bucket_time, open, high, low, close, volume, oi, is_adjusted, is_filled
 		FROM %s
 		ORDER BY bucket_time, stock_id
 		ON CONFLICT (stock_id, bucket_time) DO UPDATE SET
@@ -412,7 +417,8 @@ func (s *Store) CopyBatch(ctx context.Context, tf Timeframe, bars []Candle) erro
 			close = EXCLUDED.close,
 			volume = EXCLUDED.volume,
 			oi = EXCLUDED.oi,
-			is_adjusted = EXCLUDED.is_adjusted;
+			is_adjusted = EXCLUDED.is_adjusted,
+			is_filled = EXCLUDED.is_filled;
 	`, tableName, tempTable)
 
 	if _, err := tx.Exec(ctx, mergeSQL); err != nil {

@@ -64,19 +64,31 @@ func setupTestContainer(t testing.TB) (*pgxpool.Pool, func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	pgContainer, err := tcpostgres.Run(ctx,
-		"timescale/timescaledb:2.15.3-pg16",
-		tcpostgres.WithDatabase("strategystreet_candles_test"),
-		tcpostgres.WithUsername("postgres"),
-		tcpostgres.WithPassword("postgres"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("failed starting postgres testcontainer: %v", err)
+	var pgContainer *tcpostgres.PostgresContainer
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Skipf("skipping container integration test: docker unavailable (%v)", r)
+			}
+		}()
+		var runErr error
+		pgContainer, runErr = tcpostgres.Run(ctx,
+			"timescale/timescaledb:2.15.3-pg16",
+			tcpostgres.WithDatabase("strategystreet_candles_test"),
+			tcpostgres.WithUsername("postgres"),
+			tcpostgres.WithPassword("postgres"),
+			testcontainers.WithWaitStrategy(
+				wait.ForLog("database system is ready to accept connections").
+					WithOccurrence(2).
+					WithStartupTimeout(60*time.Second),
+			),
+		)
+		if runErr != nil {
+			t.Skipf("skipping container integration test: docker unavailable: %v", runErr)
+		}
+	}()
+	if t.Skipped() || pgContainer == nil {
+		return nil, func() {}
 	}
 
 	cleanup := func() {
@@ -152,6 +164,20 @@ func setupTestContainer(t testing.TB) (*pgxpool.Pool, func()) {
 		pool.Close()
 		cleanup()
 		t.Fatalf("failed executing migration 0002: %v", err)
+	}
+
+	// Apply migration 0005 (is_filled column)
+	m5File := filepath.Join(repoRoot, "db", "migrations", "0005_is_filled.up.sql")
+	m5SQL, err := os.ReadFile(m5File)
+	if err != nil {
+		pool.Close()
+		cleanup()
+		t.Fatalf("failed reading %s: %v", m5File, err)
+	}
+	if _, err := pool.Exec(context.Background(), string(m5SQL)); err != nil {
+		pool.Close()
+		cleanup()
+		t.Fatalf("failed executing migration 0005: %v", err)
 	}
 
 	return pool, func() {
@@ -496,19 +522,31 @@ func TestCandlesMigration_DownAndUpCycle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	pgContainer, err := tcpostgres.Run(ctx,
-		"timescale/timescaledb:2.15.3-pg16",
-		tcpostgres.WithDatabase("strategystreet_candles_mig_test"),
-		tcpostgres.WithUsername("postgres"),
-		tcpostgres.WithPassword("postgres"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("failed starting postgres testcontainer: %v", err)
+	var pgContainer *tcpostgres.PostgresContainer
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Skipf("skipping container integration test: docker unavailable (%v)", r)
+			}
+		}()
+		var runErr error
+		pgContainer, runErr = tcpostgres.Run(ctx,
+			"timescale/timescaledb:2.15.3-pg16",
+			tcpostgres.WithDatabase("strategystreet_candles_mig_test"),
+			tcpostgres.WithUsername("postgres"),
+			tcpostgres.WithPassword("postgres"),
+			testcontainers.WithWaitStrategy(
+				wait.ForLog("database system is ready to accept connections").
+					WithOccurrence(2).
+					WithStartupTimeout(60*time.Second),
+			),
+		)
+		if runErr != nil {
+			t.Skipf("skipping container integration test: docker unavailable: %v", runErr)
+		}
+	}()
+	if t.Skipped() || pgContainer == nil {
+		return
 	}
 	defer func() {
 		_ = pgContainer.Terminate(context.Background())

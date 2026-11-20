@@ -1,52 +1,45 @@
 # MASTER BOARD
 <!-- owner: orchestrator. Workers read only. Status columns are mirrors of worker logs; logs are the truth for agent state. -->
-- updated: 2026-11-19T15:25:00Z
+- updated: 2026-11-20T21:40:00Z
 - stale_after_minutes: 15
 
 ## OBJECTIVE
-Milestone 1 / SS-004: Implement TimescaleDB continuous aggregates (5m -> 1Y) with unified 09:15 IST bucket origin, refresh policies, chunk compression, raw retention, Go relation resolver, synthetic 1m test seeder, and `make tf-verify` verification tool.
+Milestone 0 / SS-005: Implement Market Session Filter & Missing-Bar Policy across Go (`internal/marketcal`) and Python (`engine/marketcal.py`) with half-open `[09:15, 15:30)` IST boundaries, deterministic wall-clock-free `NextBarClose`, read-time `CarryForward` gap filling, and schema honest `is_filled` migration.
 
 ## REQUIREMENTS
 | id | requirement | acceptance | covered_by | status |
 |---|---|---|---|---|
-| R1 | Migration 0003_continuous_aggregates | 11 continuous aggregates + `v_candle_gaps` created `WITH NO DATA`; clean rollback | WP-CAGG-1 | VERIFIED |
-| R2 | Migration 0004_policies | Refresh policies (1m end-offset), compression policies (7d, 30d, 90d, 180d), retention (7d, 30d); clean rollback | WP-CAGG-2 | VERIFIED |
-| R3 | Go Timeframe Resolver & Range | All 13 enum values resolve to relation names; `Align()` aligns to 09:15 IST anchor; writes forbidden on 5m+ | WP-CAGG-3 | VERIFIED |
-| R4 | ADR 0004 & Contracts | `docs/adr/0004-bucket-origins.md` and `candle-aggregates.md` contract frozen | WP-CAGG-0 | VERIFIED |
-| R5 | Synthetic 1m Candle Seeder | `make seed-candles` populates ~3 months of 1m data for NSE market sessions | WP-CAGG-4 | VERIFIED |
-| R6 | `make tf-verify` Verification Script | Direct comparison of continuous aggregates against from-scratch `time_bucket` SQL; byte-identical match | WP-CAGG-5 | VERIFIED |
-| R7 | Integration & Quality Proof | Visibility test after refresh, 15:30 boundary check, empty input check, policy job presence in `timescaledb_information.jobs` | WP-CAGG-6 | VERIFIED |
+| R1 | Migration 0005_is_filled | `candles_1s` and `candles_1m` get `is_filled BOOLEAN NOT NULL DEFAULT FALSE`; continuous aggregates pass `bool_and(is_filled)` | WP-SESSION-1 | VERIFIED |
+| R2 | Go Package internal/marketcal | `Session()`, `IsOpen()`, `TradingDays()`, `NextBarClose()`, and `BarsPerSession()` pass all boundary checks | WP-SESSION-2 | VERIFIED |
+| R3 | Read-Time FillPolicy Decorator | `FilledRange` decorates intra-session gaps under `CarryForward` with previous close, vol=0, `is_filled=true`; zero DB writes | WP-SESSION-2 | VERIFIED |
+| R4 | Python Mirror engine/marketcal.py | 1:1 identical semantics and signatures in Python | WP-SESSION-3 | VERIFIED |
+| R5 | Cross-Language Fixtures & ADR 0005 | Shared `engine/testdata/sessions.json` verified byte-identical in pytest and Go tests; ADR 0005 accepted | WP-SESSION-0, WP-SESSION-3 | VERIFIED |
 
 ## CONSTRAINTS
 | rule | source | effect on plan |
 |---|---|---|
-| No application writes to 5m+ | SS-004 Goal | Application only writes 1s and 1m; 5m+ maintained solely by TimescaleDB |
-| Unified 09:15 IST Origin | ADR 0004 | Origin `2015-01-01 09:15:00+05:30` mandatory for 1h/1d alignment & hierarchical cagg compatibility |
-| Hierarchical Cagg Dependency | TimescaleDB 2.15 | `candles_15d`, `candles_1mo`, `candles_6mo`, `candles_1y` depend on `candles_1d` and must share origin |
-| 1m End Offset on Refresh | ADR 0004 | Refresh policies use `end_offset => INTERVAL '1 minute'` to prevent locking live open candle |
-| Permanent Daily+ Data | Platform Spec §5.2 | No retention policy on `candles_1d` or higher timeframes |
+| Half-open `[09:15, 15:30)` IST | SS-005 Goal | 15:30:00 tick belongs to NO bar; never create a phantom last-second bar |
+| Wall-Clock Independence | SS-005 Architecture | `NextBarClose` is pure with respect to wall-clock seconds for deterministic paper trading |
+| Read-Time Only Gap Filling | SS-005 Architecture | Filled bars are never persisted to database; `ValidateBar` rejects `is_filled=true` |
+| 1:1 Go/Python Parity | SS-005 Goal | Shared JSON fixture file ensures identical behavior across both engines |
 
 ## CAPABILITY MATRIX
 | WP | needed capability | assigned skill/agent | fit (OK / ADHOC / GAP) | reason if generic over specialist |
 |---|---|---|---|---|
-| WP-CAGG-0 | Architecture ADR & Contract | project-manager | OK | ADR 0004 author and contract freeze |
-| WP-CAGG-1 | Continuous Aggregates DDL | pessimistic-minimalist-backend | OK | TimescaleDB continuous aggregates DDL, rollups, indexes |
-| WP-CAGG-2 | Policies DDL Migration | pessimistic-minimalist-backend | OK | Refresh, compression, retention policies in SQL |
-| WP-CAGG-3 | Go Relation Resolver & Align | lazy-senior-engineer | OK | Timeframe enum, Align() arithmetic, Range support |
-| WP-CAGG-4 | Synthetic 1m Seeder | lazy-senior-engineer | OK | High-speed synthetic bar generation with CopyBatch |
-| WP-CAGG-5 | tf-verify Verification Tool | qa-tester | OK | Row-by-row verification against raw computation |
-| WP-CAGG-6 | Integration & Verification Gate | verify-and-stop | OK | Adversarial integration tests and acceptance proofs |
+| WP-SESSION-0 | Architecture ADR & Contract | project-manager | OK | ADR 0005 author and contract freeze |
+| WP-SESSION-1 | Migration 0005 & Store Update | pessimistic-minimalist-backend | OK | Schema alter, continuous aggregates, candle store |
+| WP-SESSION-2 | Go Marketcal Implementation | lazy-senior-engineer | OK | Calendar loader, Session/IsOpen, FilledRange decorator |
+| WP-SESSION-3 | Python Marketcal Mirror | lazy-senior-engineer | OK | Python engine mirror, shared fixture tests |
+| WP-SESSION-4 | Integration & Quality Proof | verify-and-stop | OK | Unit tests, pytest cross-language validation, linters |
 
 ## WAVES AND WORK PACKAGES
 | wave | WP | agent-id | depends_on | write_scope | state (mirror) | synced |
 |---|---|---|---|---|---|---|
-| 0 | WP-CAGG-0 | orchestrator | none | `docs/adr/0004-bucket-origins.md`, `.orchestrator/contracts/candle-aggregates.md` | COMPLETED | yes |
-| 1 | WP-CAGG-1 | db-engineer | WP-CAGG-0 | `db/migrations/0003_continuous_aggregates.*.sql` | COMPLETED | yes |
-| 1 | WP-CAGG-3 | backend-engineer | WP-CAGG-0 | `api/internal/store/candles/**` | COMPLETED | yes |
-| 2 | WP-CAGG-2 | db-engineer | WP-CAGG-1 | `db/migrations/0004_policies.*.sql` | COMPLETED | yes |
-| 2 | WP-CAGG-4 | backend-engineer | WP-CAGG-1, WP-CAGG-3 | `api/cmd/seed-candles/**`, `Makefile` | COMPLETED | yes |
-| 3 | WP-CAGG-5 | qa-tester | WP-CAGG-2, WP-CAGG-4 | `api/cmd/tf-verify/**`, `Makefile` | COMPLETED | yes |
-| 4 | WP-CAGG-6 | orchestrator | WP-CAGG-3, WP-CAGG-5 | `api/internal/store/candles/cagg_test.go`, `.orchestrator/master-board.md` | COMPLETED | yes |
+| 0 | WP-SESSION-0 | orchestrator | none | `docs/adr/0005-session-boundaries.md`, `.orchestrator/contracts/session-filter.md` | COMPLETED | yes |
+| 1 | WP-SESSION-1 | db-engineer | WP-SESSION-0 | `db/migrations/0005_is_filled.*.sql`, `api/internal/store/candles/**` | COMPLETED | yes |
+| 2 | WP-SESSION-2 | backend-engineer | WP-SESSION-0, WP-SESSION-1 | `api/internal/marketcal/**`, `engine/testdata/sessions.json` | COMPLETED | yes |
+| 3 | WP-SESSION-3 | backend-engineer | WP-SESSION-2 | `engine/engine/marketcal.py`, `engine/marketcal.py`, `engine/tests/test_marketcal.py` | COMPLETED | yes |
+| 4 | WP-SESSION-4 | orchestrator | WP-SESSION-1, WP-SESSION-2, WP-SESSION-3 | `.orchestrator/master-board.md` | COMPLETED | yes |
 
 ## CONTRACTS
 | name | version | path | status (DRAFT / FROZEN) |
@@ -54,21 +47,22 @@ Milestone 1 / SS-004: Implement TimescaleDB continuous aggregates (5m -> 1Y) wit
 | metadata-schema | 1 | `.orchestrator/contracts/metadata-schema.md` | FROZEN |
 | candle-store | 1 | `.orchestrator/contracts/candle-store.md` | FROZEN |
 | candle-aggregates | 1 | `.orchestrator/contracts/candle-aggregates.md` | FROZEN |
+| session-filter | 1 | `.orchestrator/contracts/session-filter.md` | FROZEN |
 
 ## RESOURCE REGISTRY
 | resource (port, db, env key) | value or name | owner |
 |---|---|---|
-| Unified Origin Constant | `2015-01-01 09:15:00+05:30` (UTC: `2015-01-01 03:45:00Z`) | ADR 0004 / Migration 0003 |
-| Intraday Continuous Aggregates | `candles_5m`, `candles_10m`, `candles_15m`, `candles_30m`, `candles_1h`, `candles_3h`, `candles_1d` | Migration 0003 |
-| Macro Continuous Aggregates | `candles_15d`, `candles_1mo`, `candles_6mo`, `candles_1y` | Migration 0003 |
-| Gap Detection View | `v_candle_gaps` | Migration 0003 |
-| TimescaleDB Jobs Registry | `timescaledb_information.jobs` | Migration 0004 |
+| Regular Session Hours | `09:15:00` - `15:30:00` Asia/Kolkata | ADR 0005 / marketcal |
+| Schema Column Flag | `is_filled BOOLEAN NOT NULL DEFAULT FALSE` | Migration 0005 |
+| Shared Cross-Language Fixture | `engine/testdata/sessions.json` | marketcal / testdata |
 
 ## DIRECTIVES
 | id | target agent | directive (HALT / RESUME / CHANGE) | detail | issued |
 |---|---|---|---|---|
 | DIR-01 | all | RESUME | SS-003 candle store and hypertables verified | 2026-11-18T16:00:00Z |
-| DIR-02 | all | RESUME | SS-004 continuous aggregates plan approved, beginning implementation | 2026-11-19T15:25:00Z |
+| DIR-02 | all | RESUME | SS-004 continuous aggregates plan approved and verified | 2026-11-19T15:25:00Z |
+| DIR-03 | all | RESUME | SS-005 session filter & missing-bar policy implemented and verified | 2026-11-20T21:40:00Z |
 
 ## ARBITRATION LOG
-- 2026-11-19: Selected `2015-01-01 09:15:00+05:30` as the platform-wide unified origin. Anchors 1h bars to 09:15, 10:15... IST, keeps 1d session bars within 09:15-15:30 IST, and enables hierarchical caggs (`candles_15d`, `candles_1mo`, etc.) to build directly on `candles_1d` without origin mismatch errors.
+- 2026-11-20: Enforced half-open `[09:15, 15:30)` IST session boundaries. A tick at `15:30:00` belongs to NO bar.
+- 2026-11-20: Forward-filled missing bars are decorated strictly at query/read-time with `is_filled=true` and `volume=0`. `ValidateBar()` actively forbids application writes with `is_filled=true` to guarantee zero phantom storage.
