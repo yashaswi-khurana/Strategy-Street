@@ -1,118 +1,117 @@
 {
-  "objective": "SS-005: Market Session Filter & Missing-Bar Policy across Go (internal/marketcal) and Python (engine/marketcal.py) with half-open session semantics, deterministic bar-closing, read-time gap decoration, and is_filled column schema honest migration.",
+  "objective": "SS-006: Corporate Actions & Split/Dividend Adjustment Pipeline across PostgreSQL (migration 0006, corporate_actions, adjustment_factors, data_quality_issues, adjusted_candles function) and Go (api/internal/store/corporate, ca-recompute, ca-detect).",
   "requirements": [
     {
       "id": "R1",
-      "text": "Migration 0005 is_filled",
-      "acceptance": "0005_is_filled.up.sql adds is_filled BOOLEAN NOT NULL DEFAULT FALSE to candles_1s and candles_1m, recreates continuous aggregates passing bool_and(is_filled); down.sql cleanly rolls back"
+      "text": "Migration 0006 corporate_actions, adjustment_factors, data_quality_issues, and adjusted_candles",
+      "acceptance": "0006_corporate_actions.up.sql creates corporate_actions, adjustment_factors, data_quality_issues, and adjusted_candles SQL function; down.sql cleanly rolls back"
     },
     {
       "id": "R2",
-      "text": "Go Market Calendar Package internal/marketcal",
-      "acceptance": "Session(), IsOpen([09:15, 15:30) IST), TradingDays(), NextBarClose(deterministic pure), and BarsPerSession() implemented and tested"
+      "text": "Go Backward Adjustment Factor Calculation",
+      "acceptance": "internal/store/corporate computes single and cumulative backward factors for split, bonus, dividend, and chains tested against hand-computed values"
     },
     {
       "id": "R3",
-      "text": "Missing-Bar Policy & Read-Time Decorator",
-      "acceptance": "FillPolicy (CarryForward, Skip) decorator FilledRange fills mid-session gaps with volume=0, is_filled=true, previous close; no phantom storage writes"
+      "text": "Query-Time adjusted_candles SQL Function",
+      "acceptance": "For a 1:5 split on 2024-06-14 with pre-split close 2500, adjusted_candles returns 500 for the day before ex-date and 500 on ex-date; volume strictly unchanged"
     },
     {
       "id": "R4",
-      "text": "Python 1:1 Mirror engine/marketcal.py",
-      "acceptance": "Calendar, filled_range, next_bar_close implemented in Python with identical semantics"
+      "text": "CLI Commands ca-recompute and ca-detect",
+      "acceptance": "make ca-recompute --stock=RELIANCE is idempotent; make ca-detect --stock=... flags overnight moves beyond ±35% without corporate action and unverified actions into data_quality_issues"
     },
     {
       "id": "R5",
-      "text": "Shared Cross-Language Fixtures & ADR 0005",
-      "acceptance": "Go generates engine/testdata/sessions.json; pytest and Go test suite verify byte-identical results; docs/adr/0005-session-boundaries.md accepted"
+      "text": "Historical Seeds & ADR 0006",
+      "acceptance": "db/seeds/05_corporate_actions.sql seeds 6 real corporate actions + unverified test action; docs/adr/0006-adjustment-method.md accepted"
     }
   ],
   "packages": [
     {
-      "id": "WP-SESSION-0",
+      "id": "WP-CA-0",
       "kind": "contract",
-      "title": "ADR 0005 Session Boundaries & Contract",
+      "title": "ADR 0006 Adjustment Method & Contract",
       "owner": "orchestrator",
       "skill": "project-manager",
       "depends_on": [],
       "write_scope": [
-        "docs/adr/0005-session-boundaries.md",
-        "docs/issues/SS-005-session-and-missing-bars.md",
-        ".orchestrator/contracts/session-filter.md"
+        "docs/adr/0006-adjustment-method.md",
+        "docs/issues/SS-006-corporate-actions.md",
+        ".orchestrator/contracts/corporate-actions.md"
       ],
       "covers": [
         "R5"
       ],
-      "acceptance": "Contract frozen and ADR 0005 accepted"
+      "acceptance": "Contract frozen and ADR 0006 accepted"
     },
     {
-      "id": "WP-SESSION-1",
+      "id": "WP-CA-1",
       "kind": "build",
-      "title": "Migration 0005 is_filled Column & Continuous Aggregates",
+      "title": "Migration 0006 Schema & adjusted_candles SQL Function",
       "owner": "db-engineer",
       "skill": "pessimistic-minimalist-backend",
       "depends_on": [
-        "WP-SESSION-0"
+        "WP-CA-0"
       ],
       "write_scope": [
-        "db/migrations/0005_is_filled.*.sql",
-        "api/internal/store/candles/**"
+        "db/migrations/0006_corporate_actions.*.sql",
+        "db/seeds/05_corporate_actions.sql"
       ],
       "covers": [
-        "R1"
+        "R1",
+        "R5"
       ],
-      "acceptance": "0005_is_filled.up.sql creates column and cagg rollups; candles store updated"
+      "acceptance": "0006_corporate_actions migration applies and rolls back cleanly; seeds populate 6 real actions"
     },
     {
-      "id": "WP-SESSION-2",
+      "id": "WP-CA-2",
       "kind": "build",
-      "title": "Go internal/marketcal Calendar & FillPolicy Decorator",
+      "title": "Go Corporate Store & Factor Math",
       "owner": "backend-engineer",
       "skill": "lazy-senior-engineer",
       "depends_on": [
-        "WP-SESSION-0",
-        "WP-SESSION-1"
+        "WP-CA-0",
+        "WP-CA-1"
       ],
       "write_scope": [
-        "api/internal/marketcal/**",
-        "engine/testdata/sessions.json"
+        "api/internal/store/corporate/**"
       ],
       "covers": [
         "R2",
         "R3"
       ],
-      "acceptance": "internal/marketcal boundary tests, AC1-AC4 pass, sessions.json fixture generated"
+      "acceptance": "Unit tests for split, bonus, dividend, chains pass; integration tests verify all 5 acceptance criteria"
     },
     {
-      "id": "WP-SESSION-3",
+      "id": "WP-CA-3",
       "kind": "build",
-      "title": "Python engine/marketcal.py 1:1 Mirror & Fixture Tests",
+      "title": "CLI Binaries ca-recompute, ca-detect & Makefile",
       "owner": "backend-engineer",
-      "skill": "lazy-senior-engineer",
+      "skill": "ponytail",
       "depends_on": [
-        "WP-SESSION-2"
+        "WP-CA-2"
       ],
       "write_scope": [
-        "engine/engine/marketcal.py",
-        "engine/marketcal.py",
-        "engine/tests/test_marketcal.py"
+        "api/cmd/ca-recompute/**",
+        "api/cmd/ca-detect/**",
+        "Makefile"
       ],
       "covers": [
-        "R4",
-        "R5"
+        "R4"
       ],
-      "acceptance": "pytest verifies 100% equivalence on shared fixtures and acceptance criteria"
+      "acceptance": "make ca-recompute and make ca-detect execute cleanly with target flags"
     },
     {
-      "id": "WP-SESSION-4",
+      "id": "WP-CA-4",
       "kind": "integration",
-      "title": "Full System Integration & Verification",
+      "title": "Integration Quality & Proof",
       "owner": "orchestrator",
       "skill": "verify-and-stop",
       "depends_on": [
-        "WP-SESSION-1",
-        "WP-SESSION-2",
-        "WP-SESSION-3"
+        "WP-CA-1",
+        "WP-CA-2",
+        "WP-CA-3"
       ],
       "write_scope": [
         ".orchestrator/master-board.md"
@@ -124,7 +123,7 @@
         "R4",
         "R5"
       ],
-      "acceptance": "All Go and Python tests pass, linters pass, zero regressions"
+      "acceptance": "All tests pass, linters clean, SQL output confirms adjusted series continuity"
     }
   ]
 }

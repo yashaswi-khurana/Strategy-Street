@@ -280,24 +280,24 @@ SELECT add_continuous_aggregate_policy('candles_3h',
   schedule_interval => INTERVAL '1 minute', if_not_exists => true);
 
 SELECT add_continuous_aggregate_policy('candles_1d',
-  start_offset => INTERVAL '7 days', end_offset => INTERVAL '1 minute',
-  schedule_interval => INTERVAL '1 minute', if_not_exists => true);
-
-SELECT add_continuous_aggregate_policy('candles_15d',
-  start_offset => INTERVAL '30 days', end_offset => INTERVAL '1 minute',
-  schedule_interval => INTERVAL '15 minutes', if_not_exists => true);
-
-SELECT add_continuous_aggregate_policy('candles_1mo',
-  start_offset => INTERVAL '60 days', end_offset => INTERVAL '1 minute',
+  start_offset => INTERVAL '7 days', end_offset => INTERVAL '1 hour',
   schedule_interval => INTERVAL '1 hour', if_not_exists => true);
 
+SELECT add_continuous_aggregate_policy('candles_15d',
+  start_offset => INTERVAL '60 days', end_offset => INTERVAL '1 day',
+  schedule_interval => INTERVAL '1 day', if_not_exists => true);
+
+SELECT add_continuous_aggregate_policy('candles_1mo',
+  start_offset => INTERVAL '90 days', end_offset => INTERVAL '1 day',
+  schedule_interval => INTERVAL '1 day', if_not_exists => true);
+
 SELECT add_continuous_aggregate_policy('candles_6mo',
-  start_offset => INTERVAL '365 days', end_offset => INTERVAL '1 minute',
-  schedule_interval => INTERVAL '6 hours', if_not_exists => true);
+  start_offset => INTERVAL '500 days', end_offset => INTERVAL '1 day',
+  schedule_interval => INTERVAL '1 day', if_not_exists => true);
 
 SELECT add_continuous_aggregate_policy('candles_1y',
-  start_offset => INTERVAL '730 days', end_offset => INTERVAL '1 minute',
-  schedule_interval => INTERVAL '12 hours', if_not_exists => true);
+  start_offset => INTERVAL '1000 days', end_offset => INTERVAL '1 day',
+  schedule_interval => INTERVAL '1 day', if_not_exists => true);
 
 -- Enable TimescaleDB compression on intraday continuous aggregates
 ALTER MATERIALIZED VIEW candles_5m SET (

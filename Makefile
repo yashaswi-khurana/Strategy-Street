@@ -1,4 +1,4 @@
-.PHONY: all up down migrate migrate-up migrate-down migrate-status seed seed-candles tf-verify api engine web test test-go test-engine test-web lint lint-go lint-engine lint-web help
+.PHONY: all up down migrate migrate-up migrate-down migrate-status seed seed-candles tf-verify ca-recompute ca-detect api engine web test test-go test-engine test-web lint lint-go lint-engine lint-web help
 
 -include .env
 export
@@ -9,6 +9,15 @@ REDIS_URL ?= redis://localhost:6379/0
 
 ENV_FILE_FLAG := $(shell [ -f .env ] && echo "--env-file .env")
 MIGRATE_BIN := $(shell which migrate 2>/dev/null || ( [ -x $(HOME)/go/bin/migrate ] && echo $(HOME)/go/bin/migrate ))
+
+ifeq (ca-recompute,$(firstword $(MAKECMDGOALS)))
+  CA_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(CA_ARGS):;@:)
+endif
+ifeq (ca-detect,$(firstword $(MAKECMDGOALS)))
+  CA_DETECT_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(CA_DETECT_ARGS):;@:)
+endif
 
 all: test lint
 
@@ -69,6 +78,14 @@ tf-verify:
 	@echo "==> Verifying continuous aggregates against from-scratch time_bucket computation..."
 	cd api && go run ./cmd/tf-verify
 
+ca-recompute:
+	@echo "==> Recomputing corporate action adjustment factors..."
+	cd api && go run ./cmd/ca-recompute $(if $(STOCK),--stock=$(STOCK),$(CA_ARGS))
+
+ca-detect:
+	@echo "==> Running corporate action jump and quality detection..."
+	cd api && go run ./cmd/ca-detect $(if $(STOCK),--stock=$(STOCK),$(CA_DETECT_ARGS))
+
 api:
 	cd api && go run ./cmd/api
 
@@ -119,6 +136,8 @@ help:
 	@echo "  make migrate-down   - Roll back latest migration"
 	@echo "  make migrate-status - Show current migration version"
 	@echo "  make seed           - Seed database with reference data"
+	@echo "  make ca-recompute   - Recompute adjustment factors (e.g. make ca-recompute --stock=RELIANCE)"
+	@echo "  make ca-detect      - Detect overnight jumps (e.g. make ca-detect --stock=RELIANCE)"
 	@echo "  make api            - Run Go API service locally"
 	@echo "  make engine         - Run Python Engine service locally"
 	@echo "  make web            - Run Angular frontend dev server"
